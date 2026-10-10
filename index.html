@@ -39,13 +39,16 @@ input,textarea{width:100%;box-sizing:border-box;font:inherit;color:inherit;backg
 .chip{border-radius:99px;padding:2px 9px;font-weight:700;font-size:12px;color:#fff;background:#1f9d55;height:fit-content}.chip.ng{background:#d64545}
 .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:10px}.qc{text-align:center;padding:10px;border:1px solid var(--l);border-radius:12px}
 .qc img{width:140px;height:140px;background:#fff;padding:10px;image-rendering:pixelated;border-radius:6px}
+.sm{border:1px solid var(--l);background:var(--s);border-radius:10px;padding:8px 12px;min-height:40px}
+.g3{display:grid;grid-template-columns:1fr 2fr 1fr;gap:8px}.g4{display:grid;grid-template-columns:2fr 1.3fr .8fr .8fr;gap:6px;margin:6px 0}
+.pt{border-top:1px solid var(--l);padding:10px 0}.pt textarea{margin:0 0 6px}#pv{width:100%;border-radius:10px;display:block}
 :focus-visible{outline:2px solid var(--a);outline-offset:2px}
 </style></head><body>
 <video id="v" playsinline muted></video>
 <div id="demo" hidden><img id="dq" alt="QR demo"></div>
 <canvas id="ov"></canvas><div id="ca"></div>
 <div id="top" class="ui"><div><b id="mn">AR Preventive Maintenance</b><small id="ms">Memulai kamera…</small></div>
-<div class="r"><span id="prog" hidden></span><button id="bd">Demo</button><button id="bh">Riwayat</button><button id="bq">QR Mesin</button></div></div>
+<div class="r"><span id="prog" hidden></span><button id="bd">Demo</button><button id="ba">Admin</button><button id="bh">Riwayat</button><button id="bq">QR Mesin</button></div></div>
 <div id="toast" class="ui" hidden></div>
 <div id="dlg" hidden><div class="ui" id="card"></div></div>
 <script src="jsQR.js"></script>
@@ -66,7 +69,7 @@ const MC={'DEMO-001':{name:'Demo Molding (lembar A4)',qr:6.0,pts:PD},'MLD-001':{
 const $=s=>document.querySelector(s),esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 let rec=[],by='';try{rec=JSON.parse(localStorage.getItem('pm.rec')||'[]');by=localStorage.getItem('pm.by')||''}catch(e){}
 const persist=()=>{try{localStorage.setItem('pm.rec',JSON.stringify(rec));localStorage.setItem('pm.by',by)}catch(e){}};
-const qrimg=(c,cell=6)=>{const q=qrcode(0,'M');q.addData('PM:'+c);q.make();return q.createDataURL(cell,0)};
+const qrimg=(c,cell=6)=>{const q=qrcode(2,'M');q.addData('PM:'+c+'|PM-AR');q.make();return q.createDataURL(cell,0)};
 const today=()=>new Date().toDateString();
 const st=(mc,i)=>{const r=[...rec].reverse().find(x=>x.mc==mc&&x.pi==i&&new Date(x.ts).toDateString()==today());return r?r.s:''};
 let toastT;const toast=m=>{const e=$('#toast');e.textContent=m;e.hidden=false;clearTimeout(toastT);toastT=setTimeout(()=>e.hidden=true,2200)};
@@ -124,5 +127,43 @@ $('#bh').onclick=()=>{const r=[...rec].reverse().slice(0,60);show(`<h2>Riwayat c
  card.onclick=async e=>{const id=e.target.id;if(id=='cx')hide();if(id=='cp'){const csv='waktu,mesin,titik,status,inspektor,catatan,detail\n'+rec.map(x=>[new Date(x.ts).toISOString(),x.mc,x.pt,x.s,x.by,x.note,x.items.map(i=>`${i.t}=${i.v}${i.u}${i.ok?'':'(NG)'}`).join('; ')].map(c=>'"'+String(c).replace(/"/g,'""')+'"').join(',')).join('\n');try{await navigator.clipboard.writeText(csv);toast('CSV disalin')}catch(_){toast('Clipboard diblokir browser')}}}};
 $('#bq').onclick=()=>{show(`<h2>QR Code mesin</h2><p class="sub">Cetak ukuran ±10×10 cm, tempel di bagian depan mesin. Isi QR: PM:&lt;kode mesin&gt;</p><div class="grid">`+Object.keys(MC).map(c=>`<div class="qc"><img src="${qrimg(c,8)}" alt="QR ${c}"><br><b>${c}</b><br><small>${esc(MC[c].name)}</small></div>`).join('')+`</div><div class="ft"><button id="cx">Tutup</button></div>`);card.onclick=e=>{if(e.target.id=='cx')hide()}};
 $('#bd').onclick=()=>{if(demo)startCam();else setDemo(true)};
-startCam();requestAnimationFrame(frame);
+// ===== ADMIN: buat/ubah mesin, titik inspeksi, cetak QR
+async function loadCfg(){try{const r=await fetch('machines.json',{cache:'no-store'});if(r.ok)Object.assign(MC,await r.json())}catch(e){}try{const l=JSON.parse(localStorage.getItem('pm.mc')||'null');if(l)Object.assign(MC,l)}catch(e){}}
+const fmtI=i=>i.u!==undefined?`${i.t} | ${i.min} | ${i.max} | ${i.u}`:i.t;
+const parseI=tx=>tx.split('\n').map(l=>l.trim()).filter(Boolean).map(l=>{const a=l.split('|').map(x=>x.trim());return a.length>=3&&a[1]!==''&&a[2]!==''&&!isNaN(+a[1])&&!isNaN(+a[2])?{t:a[0],min:+a[1],max:+a[2],u:a[3]||''}:{t:a[0]}});
+const getL=()=>{try{return JSON.parse(localStorage.getItem('pm.mc')||'{}')}catch(e){return{}}},putL=o=>{try{localStorage.setItem('pm.mc',JSON.stringify(o))}catch(e){}};
+let ed=null,isNew=false;
+function aList(){card.oninput=null;show(`<h2>Admin mesin</h2><p class="sub">Buat / ubah mesin & titik inspeksi, lalu cetak QR-nya.</p>`+Object.keys(MC).map(c=>`<div class="row"><div><b>${esc(c)}</b> · ${esc(MC[c].name)}<br><small>${MC[c].pts.length} titik · QR ${MC[c].qr} cm</small></div><button class="sm" data-e="${esc(c)}">Edit</button></div>`).join('')+`<div class="ft"><button id="cx">Tutup</button><button data-n="1">+ Mesin baru</button></div><div class="ft"><button id="ex">Ekspor machines.json</button><button id="im">Impor JSON</button></div>`);
+ card.onclick=e=>{const b=e.target.closest('button');if(!b)return;if(b.id=='cx')hide();else if(b.dataset.e)aEdit(b.dataset.e);else if(b.dataset.n)aEdit(null);else if(b.id=='ex')aExport();else if(b.id=='im')aImport()}}
+$('#ba').onclick=aList;
+function aEdit(code){isNew=!code;const m=code?MC[code]:{name:'',qr:10,pts:[{n:'',s:'',x:-30,y:-20,it:[{t:''}]}]};
+ ed={code:code||'',name:m.name,qr:m.qr,pts:m.pts.map(p=>({n:p.n,s:p.s||'',x:p.x,y:p.y,tx:p.it.map(fmtI).join('\n')}))};aForm()}
+function aForm(){const st=dlg.hidden?0:card.scrollTop;
+ show(`<h2>${isNew?'Mesin baru':'Edit '+esc(ed.code)}</h2><div class="g3"><label>Kode mesin<input data-f="code" value="${esc(ed.code)}" placeholder="MLD-003"></label><label>Nama mesin<input data-f="name" value="${esc(ed.name)}"></label><label>Ukuran QR (cm)<input data-f="qr" type="number" step="0.1" value="${ed.qr}"></label></div>
+ <canvas id="pv" width="640" height="420"></canvas><p class="sub">Pusat gambar = pusat QR. x: kanan (+) / kiri (−), y: bawah (+) / atas (−), dalam cm dari pusat QR.</p>`+
+ ed.pts.map((p,i)=>`<div class="pt" data-i="${i}"><b>Titik ${i+1}</b><div class="g4"><input data-p="n" value="${esc(p.n)}" placeholder="Nama titik"><input data-p="s" value="${esc(p.s)}" placeholder="Label singkat"><input data-p="x" type="number" step="0.5" value="${p.x}" aria-label="x cm"><input data-p="y" type="number" step="0.5" value="${p.y}" aria-label="y cm"></div><textarea data-p="tx" rows="3" placeholder="1 item per baris. Item angka: Nama | min | max | satuan">${esc(p.tx)}</textarea><button class="sm" data-d="${i}">Hapus titik</button></div>`).join('')+
+ `<div class="ft"><button class="sm" data-a="1">+ Titik</button><button class="sm" data-q="1">Unduh QR (siap cetak)</button></div><div class="ft"><button id="bk">Kembali</button><button class="pr" id="sv2">Simpan</button></div>`);card.scrollTop=st;
+ card.oninput=e=>{const t=e.target,f=t.dataset.f,p=t.dataset.p;if(f)ed[f]=t.value;else if(p)ed.pts[+t.closest('.pt').dataset.i][p]=t.value;pv()};
+ card.onclick=e=>{const b=e.target.closest('button');if(!b)return;
+  if(b.dataset.a){ed.pts.push({n:'',s:'',x:0,y:0,tx:''});aForm()}else if(b.dataset.d!==undefined){ed.pts.splice(+b.dataset.d,1);aForm()}else if(b.dataset.q)aQR();else if(b.id=='bk')aList();else if(b.id=='sv2')aSave()};pv()}
+function pv(){const c=$('#pv');if(!c)return;const x=c.getContext('2d'),W=c.width,H=c.height,q=+ed.qr>0?+ed.qr:10,cx0=W/2,cy0=H/2,P=ed.pts.map(p=>({x:+p.x||0,y:+p.y||0}));
+ const ex=Math.max(q/2,...P.map(p=>Math.abs(p.x)))+2,ey=Math.max(q/2,...P.map(p=>Math.abs(p.y)))+2,k=Math.min((W/2-120)/ex,(H/2-20)/ey);
+ x.fillStyle='#1c2128';x.fillRect(0,0,W,H);x.strokeStyle='rgba(255,255,255,.5)';x.lineWidth=2;x.setLineDash([6,6]);P.forEach(p=>{x.beginPath();x.moveTo(cx0,cy0);x.lineTo(cx0+p.x*k,cy0+p.y*k);x.stroke()});x.setLineDash([]);
+ x.fillStyle='#fff';x.fillRect(cx0-q*k/2,cy0-q*k/2,q*k,q*k);x.fillStyle='#000';x.font='bold 18px system-ui';x.textAlign='center';x.fillText('QR',cx0,cy0+6);
+ ed.pts.forEach((p,i)=>{const px=cx0+P[i].x*k,py=cy0+P[i].y*k;x.fillStyle='#e08a1e';x.beginPath();x.arc(px,py,14,0,7);x.fill();x.fillStyle='#fff';x.font='bold 17px system-ui';x.textAlign='center';x.fillText(String(i+1),px,py+6);x.textAlign='left';x.font='600 17px system-ui';x.fillText(p.s||p.n,px+20,py+6)});
+ x.fillStyle='#9fb3c4';x.font='15px system-ui';x.textAlign='left';x.fillText('Skala: 1 cm = '+k.toFixed(1)+' px · QR '+q+' cm',10,H-10)}
+const okCode=c=>/^[A-Z0-9-]{2,14}$/.test(c);
+function aQR(){const code=(ed.code||'').trim().toUpperCase(),q=+ed.qr;if(!okCode(code)||!(q>0))return toast('Isi kode (A–Z, 0–9, minus, maks 14) & ukuran QR');
+ const g=qrcode(2,'M');g.addData('PM:'+code+'|PM-AR');g.make();const n=g.getModuleCount(),px=Math.round(q/2.54*300),m4=Math.round(px/n*4),c=document.createElement('canvas');c.width=px+2*m4;c.height=px+2*m4+70;const x=c.getContext('2d');x.fillStyle='#fff';x.fillRect(0,0,c.width,c.height);x.fillStyle='#000';
+ for(let r=0;r<n;r++)for(let k=0;k<n;k++)if(g.isDark(r,k)){const a=Math.round(k*px/n),b=Math.round((k+1)*px/n),d=Math.round(r*px/n),e=Math.round((r+1)*px/n);x.fillRect(m4+a,m4+d,b-a,e-d)}
+ const t=`${code} · QR ${q} cm · cetak 100%`;let fs=30;x.font=`bold ${fs}px system-ui`;while(x.measureText(t).width>c.width-10&&fs>10){fs--;x.font=`bold ${fs}px system-ui`}x.textAlign='center';x.fillText(t,c.width/2,px+2*m4+42);
+ c.toBlob(b=>{const a=document.createElement('a');a.href=URL.createObjectURL(b);a.download=`qr-${code}-${q}cm.png`;a.click();toast('QR diunduh — cetak skala 100%')})}
+function aSave(){const code=(ed.code||'').trim().toUpperCase(),q=+ed.qr;
+ if(!okCode(code))return toast('Kode: A–Z, 0–9, minus, 2–14 karakter');if(!ed.name.trim()||!(q>0))return toast('Isi nama mesin & ukuran QR');if(!ed.pts.length)return toast('Minimal 1 titik');
+ const pts=[];for(const p of ed.pts){const it=parseI(p.tx);if(!String(p.n).trim()||String(p.x)===''||String(p.y)===''||isNaN(+p.x)||isNaN(+p.y)||!it.length)return toast('Lengkapi nama, x, y & item di tiap titik');pts.push({n:String(p.n).trim(),s:String(p.s).trim()||undefined,x:+p.x,y:+p.y,it})}
+ const m={name:ed.name.trim(),qr:q,pts};MC[code]=m;const l=getL();l[code]=m;putL(l);if(cur==code)resetM();toast('Mesin '+code+' disimpan');aList()}
+function aExport(){const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([JSON.stringify(MC,null,1)],{type:'application/json'}));a.download='machines.json';a.click();toast('machines.json diunduh — taruh di repo GitHub')}
+function aImport(){show(`<h2>Impor machines.json</h2><label>Tempel isi JSON<textarea id="ij" rows="10"></textarea></label><div class="ft"><button id="bk">Kembali</button><button class="pr" id="ap">Terapkan</button></div>`);
+ card.onclick=e=>{if(e.target.id=='bk')aList();if(e.target.id=='ap'){try{const o=JSON.parse($('#ij').value);if(!o||typeof o!='object')throw 0;Object.keys(o).forEach(k=>{if(!okCode(k)||!Array.isArray(o[k].pts))throw 0});Object.assign(MC,o);putL(Object.assign(getL(),o));toast('Diimpor: '+Object.keys(o).length+' mesin');aList()}catch(_){toast('JSON tidak valid')}}}}
+loadCfg().then(startCam);requestAnimationFrame(frame);
 </script></body></html>
