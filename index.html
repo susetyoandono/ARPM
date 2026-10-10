@@ -48,8 +48,8 @@ input,textarea{width:100%;box-sizing:border-box;font:inherit;color:inherit;backg
 <div class="r"><span id="prog" hidden></span><button id="bd">Demo</button><button id="bh">Riwayat</button><button id="bq">QR Mesin</button></div></div>
 <div id="toast" class="ui" hidden></div>
 <div id="dlg" hidden><div class="ui" id="card"></div></div>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/jsQR/1.4.0/jsQR.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcode-generator/1.4.4/qrcode.min.js"></script>
+<script src="jsQR.js"></script>
+<script src="qrcode.js"></script>
 <script>
 // ===== DATA MESIN (edit di sini). x,y = posisi titik dalam cm relatif terhadap pusat QR (x kanan, y bawah); qr = ukuran QR tercetak (cm)
 const PT=[
@@ -59,7 +59,9 @@ const PT=[
 {n:'Jalur air pendingin',x:36,y:22,it:[{t:'Tekanan air pendingin',u:'bar',min:2,max:5},{t:'Tidak ada kebocoran selang / fitting'},{t:'Strainer bersih'}]},
 {n:'Safety door & interlock',x:0,y:-30,it:[{t:'Limit switch pintu berfungsi'},{t:'Interlock area mold berfungsi'},{t:'Guard tidak retak / rusak'}]},
 {n:'Panel kontrol & E-stop',x:0,y:30,it:[{t:'Emergency stop berfungsi'},{t:'Panel bersih, filter kipas tidak tersumbat'},{t:'Tegangan suplai',u:'V',min:370,max:420}]}];
-const MC={'MLD-001':{name:'Injection Molding 150T',qr:10,pts:PT},'MLD-002':{name:'Injection Molding 350T',qr:10,pts:PT}};
+const XY=[[-6.5,-7.5],[6.5,-7.5],[-6.5,7.5],[6.5,7.5],[0,-10.5],[0,10.5]],SN=['Clamping','Injection','Oli','Pendingin','Safety','Panel'];
+const PD=PT.map((p,i)=>({...p,x:XY[i][0],y:XY[i][1],s:SN[i]}));
+const MC={'DEMO-001':{name:'Demo Molding (lembar A4)',qr:6.0,pts:PD},'MLD-001':{name:'Injection Molding 150T',qr:10,pts:PT},'MLD-002':{name:'Injection Molding 350T',qr:10,pts:PT}};
 // ===== util
 const $=s=>document.querySelector(s),esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 let rec=[],by='';try{rec=JSON.parse(localStorage.getItem('pm.rec')||'[]');by=localStorage.getItem('pm.by')||''}catch(e){}
@@ -78,19 +80,19 @@ const pj=(h,x,y)=>{const z=h[6]*x+h[7]*y+1;return[(h[0]*x+h[1]*y+h[2])/z,(h[3]*x
 const U=[[0,0],[1,0],[1,1],[0,1]];
 // ===== kamera & scan
 const v=$('#v'),ov=$('#ov'),cx=ov.getContext('2d'),sc=document.createElement('canvas'),sx=sc.getContext('2d',{willReadFrequently:true});
-let demo=false,demoCode='MLD-001',cur=null,corners=null,seen=-1e9,last=0,btns=[];
-async function startCam(){try{const s=await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:'environment'},width:{ideal:1280}},audio:false});v.srcObject=s;await v.play();setDemo(false);msg('Arahkan kamera ke QR Code mesin')}catch(e){setDemo(true);toast('Kamera tidak tersedia — mode demo aktif')}}
+let demo=false,demoCode='DEMO-001',cur=null,corners=null,seen=-1e9,last=0,btns=[];
+async function startCam(){try{const s=await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:'environment'},width:{ideal:1280}},audio:false});v.srcObject=s;await v.play();setDemo(false);msg('Arahkan ke QR, jarak ±25–40 cm, seluruh lembar masuk layar')}catch(e){setDemo(true);toast('Kamera tidak tersedia — mode demo aktif')}}
 function setDemo(on){demo=on;$('#demo').hidden=!on;v.style.display=on?'none':'block';$('#bd').textContent=on?'Kamera':'Demo';if(on){$('#dq').src=qrimg(demoCode);msg('Mode demo: QR simulasi di layar')}resetM()}
 function resetM(){cur=null;corners=null;seen=-1e9;$('#ca').innerHTML='';btns=[];$('#prog').hidden=true;$('#mn').textContent='AR Preventive Maintenance'}
 function camScan(){const vw=v.videoWidth,vh=v.videoHeight;if(!vw)return null;const k=Math.min(1,640/vw);sc.width=vw*k;sc.height=vh*k;sx.drawImage(v,0,0,sc.width,sc.height);
  const d=sx.getImageData(0,0,sc.width,sc.height),r=jsQR(d.data,d.width,d.height,{inversionAttempts:'dontInvert'});if(!r)return null;
  const W=innerWidth,H=innerHeight,s=Math.max(W/vw,H/vh),ox=(W-vw*s)/2,oy=(H-vh*s)/2,l=r.location;
- return{code:r.data.replace(/^PM:/,''),c:[l.topLeftCorner,l.topRightCorner,l.bottomRightCorner,l.bottomLeftCorner].map(p=>[p.x/k*s+ox,p.y/k*s+oy])}}
+ return{code:r.data.replace(/^PM:/,'').split('|')[0],c:[l.topLeftCorner,l.topRightCorner,l.bottomRightCorner,l.bottomLeftCorner].map(p=>[p.x/k*s+ox,p.y/k*s+oy])}}
 function demoScan(t){const W=innerWidth,H=innerHeight,cx0=W/2,cy0=H/2+30,a=Math.sin(t/1500)*.1,h=60,q=$('#dq');q.style.left=cx0-h-14+'px';q.style.top=cy0-h-14+'px';q.style.transform=`rotate(${a}rad)`;
  const R=(x,y)=>[cx0+x*Math.cos(a)-y*Math.sin(a),cy0+x*Math.sin(a)+y*Math.cos(a)];return{code:demoCode,c:[R(-h,-h),R(h,-h),R(h,h),R(-h,h)]}}
 // ===== mesin & callout
 function prog(){const m=MC[cur],n=m.pts.filter((p,i)=>st(cur,i)).length;const e=$('#prog');e.hidden=false;e.textContent=n+'/'+m.pts.length+' titik selesai'}
-function setMachine(code){cur=code;const m=MC[code];$('#mn').textContent=code+' · '+m.name;$('#ca').innerHTML='';btns=m.pts.map((p,i)=>{const b=document.createElement('button');b.className='co';b.innerHTML=`${i+1}<span>${esc(p.n)}</span>`;b.setAttribute('aria-label',p.n);b.onclick=()=>openSheet(i);$('#ca').append(b);return b});refresh();msg(code+' terkunci — tap titik untuk isi checksheet')}
+function setMachine(code){cur=code;const m=MC[code];$('#mn').textContent=code+' · '+m.name;$('#ca').innerHTML='';btns=m.pts.map((p,i)=>{const b=document.createElement('button');b.className='co';b.innerHTML=`${i+1}<span>${esc(p.s||p.n)}</span>`;b.setAttribute('aria-label',p.n);b.onclick=()=>openSheet(i);$('#ca').append(b);return b});refresh();msg(code+' terkunci — tap titik untuk isi checksheet')}
 function refresh(){btns.forEach((b,i)=>{const s=st(cur,i);b.classList.toggle('ok',s=='ok');b.classList.toggle('ng',s=='ng')});prog()}
 function frame(t){requestAnimationFrame(frame);
  if(t-last>(demo?16:100)){last=t;const r=demo?demoScan(t):camScan();
